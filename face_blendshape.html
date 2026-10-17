@@ -1,0 +1,200 @@
+
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Face Blendshape - Chiraphut27</title>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "mindar-face-three": "https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-face-three.prod.js"
+    }
+  }
+  </script>
+
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #111;
+      color: white;
+      font-family: Arial, sans-serif;
+    }
+
+    #container {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    #status {
+      position: absolute;
+      z-index: 10;
+      top: 12px;
+      left: 12px;
+      right: 12px;
+      padding: 12px;
+      border-radius: 10px;
+      background: rgba(0,0,0,.75);
+      text-align: center;
+      font-size: 14px;
+    }
+
+    #help {
+      position: absolute;
+      z-index: 10;
+      bottom: 12px;
+      left: 12px;
+      right: 12px;
+      padding: 10px;
+      border-radius: 10px;
+      background: rgba(0,0,0,.75);
+      font-size: 12px;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="container"></div>
+  <div id="status">กำลังโหลดระบบ...</div>
+  <div id="help">Face Blendshape | Chiraphut27</div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { MindARThree } from 'mindar-face-three';
+
+    const container = document.querySelector('#container');
+    const status = document.querySelector('#status');
+
+    // ==============================
+    // ปรับค่าโมเดลได้จากส่วนนี้
+    // ==============================
+
+    const MODEL_FILE = './face416.glb';
+
+    // องศาการหมุนโมเดล
+    const ROTATION_X = 0;
+    const ROTATION_Y = 180;
+    const ROTATION_Z = 0;
+
+    // ขนาดโมเดล
+    const MODEL_SCALE = 2;
+
+    // ตำแหน่งโมเดล
+    const POSITION_X = 0;
+    const POSITION_Y = 0;
+    const POSITION_Z = 0;
+
+    async function main() {
+      const mindar = new MindARThree({
+        container: container
+      });
+
+      const { renderer, scene, camera } = mindar;
+
+      renderer.setPixelRatio(
+        Math.min(window.devicePixelRatio, 2)
+      );
+
+      scene.add(
+        new THREE.HemisphereLight(
+          0xffffff, 0x777799, 2
+        )
+      );
+
+      const light = new THREE.DirectionalLight(
+        0xffffff, 1.5
+      );
+      light.position.set(0, 1, 3);
+      scene.add(light);
+
+      status.textContent = 'กำลังโหลด face416.glb...';
+
+      const loader = new GLTFLoader();
+      const gltf = await loader.loadAsync(MODEL_FILE);
+      const model = gltf.scene;
+
+      // ปรับขนาด ตำแหน่ง และมุมของโมเดล
+      model.scale.setScalar(MODEL_SCALE);
+
+      model.position.set(
+        POSITION_X,
+        POSITION_Y,
+        POSITION_Z
+      );
+
+      model.rotation.set(
+        THREE.MathUtils.degToRad(ROTATION_X),
+        THREE.MathUtils.degToRad(ROTATION_Y),
+        THREE.MathUtils.degToRad(ROTATION_Z)
+      );
+
+      // ยึดโมเดลกับจุดติดตามใบหน้า
+      const anchor = mindar.addAnchor(1);
+      anchor.group.add(model);
+
+      // ค้นหา Morph Targets สำหรับขยับสีหน้า
+      const meshes = [];
+
+      model.traverse(object => {
+        if (
+          object.isMesh &&
+          object.morphTargetDictionary &&
+          object.morphTargetInfluences
+        ) {
+          meshes.push(object);
+        }
+      });
+
+      console.log('จำนวน Mesh:', meshes.length);
+
+      meshes.forEach(mesh => {
+        console.log(
+          'Mesh:', mesh.name,
+          'Morph Targets:', mesh.morphTargetDictionary
+        );
+      });
+
+      status.textContent = 'กำลังเปิดกล้อง...';
+
+      await mindar.start();
+
+      status.textContent = meshes.length > 0
+        ? 'โหลดโมเดลสำเร็จ พร้อมติดตามใบหน้า'
+        : 'โมเดลโหลดแล้ว แต่ไม่พบ Morph Targets';
+
+      renderer.setAnimationLoop(() => {
+        const categories =
+          mindar.getLatestEstimate()?.blendshapes?.categories ?? [];
+
+        for (const mesh of meshes) {
+          for (const item of categories) {
+            const index =
+              mesh.morphTargetDictionary[item.categoryName];
+
+            if (index !== undefined) {
+              mesh.morphTargetInfluences[index] = item.score;
+            }
+          }
+        }
+
+        renderer.render(scene, camera);
+      });
+    }
+
+    main().catch(error => {
+      console.error(error);
+
+      status.textContent =
+        'เกิดข้อผิดพลาด: ตรวจสอบไฟล์ face416.glb และสิทธิ์กล้อง';
+    });
+  </script>
+</body>
+</html>
