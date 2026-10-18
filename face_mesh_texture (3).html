@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Jason Mask Face AR</title>
+  <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-face-aframe.prod.js"></script>
+  <style>
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
+    a-scene { width: 100%; height: 100%; }
+    #hint {
+      position: fixed; z-index: 20; top: 14px; left: 12px; right: 12px;
+      text-align: center; color: #fff; font: 16px Arial, sans-serif;
+      text-shadow: 0 1px 5px #000; pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="hint">กำลังเปิดกล้อง… หันหน้าเข้าหากล้องเพื่อสวมหน้ากาก</div>
+
+  <a-scene
+    mindar-face="autoStart: true;"
+    embedded
+    color-space="sRGB"
+    renderer="colorManagement: true; physicallyCorrectLights: true"
+    vr-mode-ui="enabled: false"
+    device-orientation-permission-ui="enabled: false">
+
+    <a-camera active="false" position="0 0 0"></a-camera>
+    <!-- จุดติดตามบริเวณปลายจมูก; หน้ากากจะเคลื่อนตามใบหน้า -->
+    <a-entity id="maskAnchor" mindar-face-target="anchorIndex: 1"></a-entity>
+  </a-scene>
+
+  <script>
+    const scene = document.querySelector('a-scene');
+    const hint = document.querySelector('#hint');
+    const maskAnchor = document.querySelector('#maskAnchor');
+    let maskCreated = false;
+
+    scene.addEventListener('arReady', () => {
+      if (maskCreated) return;
+      maskCreated = true;
+
+      const THREE = AFRAME.THREE;
+      const loader = new THREE.TextureLoader();
+      loader.load(
+        './json.png',
+        (sourceTexture) => {
+          try {
+            const img = sourceTexture.image;
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth || img.width;
+            canvas.height = img.naturalHeight || img.height;
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+            // ทำให้พื้นหลังสีขาวและรูสีขาวของหน้ากากโปร่งใส
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const pixels = imageData.data;
+            for (let i = 0; i < pixels.length; i += 4) {
+              const r = pixels[i], g = pixels[i + 1], b = pixels[i + 2];
+              const brightest = Math.max(r, g, b);
+              const darkest = Math.min(r, g, b);
+              const saturation = brightest - darkest;
+              if (darkest > 228 && saturation < 28) {
+                const alpha = Math.max(0, Math.min(255, Math.round((248 - darkest) * 255 / 20)));
+                pixels[i + 3] = Math.min(pixels[i + 3], alpha);
+              }
+            }
+            ctx.putImageData(imageData, 0, 0);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.colorSpace = THREE.SRGBColorSpace;
+            texture.needsUpdate = true;
+
+            // ภาพหน้ากากเป็นภาพด้านหน้า จึงวางเป็นแผ่นโปร่งใสให้ติดตามใบหน้า
+            const geometry = new THREE.PlaneGeometry(0.82, 0.86);
+            const material = new THREE.MeshBasicMaterial({
+              map: texture,
+              transparent: true,
+              alphaTest: 0.03,
+              side: THREE.DoubleSide,
+              depthWrite: false,
+              toneMapped: false
+            });
+            const mask = new THREE.Mesh(geometry, material);
+            mask.name = 'jsonMaskOverlay';
+            mask.position.set(0, -0.04, 0.08);
+            mask.renderOrder = 20;
+            mask.frustumCulled = false;
+            maskAnchor.object3D.add(mask);
+
+            hint.textContent = 'หน้ากากพร้อมแล้ว — หันหน้าตรงเข้ากล้อง';
+            console.log('json.png loaded and attached to face anchor');
+          } catch (error) {
+            console.error('ไม่สามารถเตรียมภาพหน้ากากได้', error);
+            hint.textContent = 'เตรียมหน้ากากไม่สำเร็จ ตรวจสอบไฟล์ json.png';
+          }
+        },
+        undefined,
+        (error) => {
+          console.error('โหลด ./json.png ไม่สำเร็จ', error);
+          hint.textContent = 'โหลด json.png ไม่สำเร็จ ตรวจชื่อไฟล์และตำแหน่งใน GitHub';
+        }
+      );
+    });
+
+    scene.addEventListener('arError', (event) => {
+      console.error('MindAR error', event);
+      hint.textContent = 'เปิดกล้องไม่สำเร็จ กรุณาตรวจสิทธิ์การใช้กล้อง';
+    });
+  </script>
+</body>
+</html>
